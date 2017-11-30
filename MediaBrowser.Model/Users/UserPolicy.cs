@@ -44,6 +44,7 @@ namespace MediaBrowser.Model.Users
         public bool EnablePlaybackRemuxing { get; set; }
 
         public bool EnableContentDeletion { get; set; }
+        public string[] EnableContentDeletionFromFolders { get; set; }
         public bool EnableContentDownloading { get; set; }
 
         /// <summary>
@@ -68,9 +69,12 @@ namespace MediaBrowser.Model.Users
         public string[] BlockedMediaFolders { get; set; }
         public string[] BlockedChannels { get; set; }
 
+        public int RemoteClientBitrateLimit { get; set; }
+
         public UserPolicy()
         {
             EnableContentDeletion = true;
+            EnableContentDeletionFromFolders = new string[] { };
 
             EnableSyncTranscoding = true;
 

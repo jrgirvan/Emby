@@ -15,7 +15,7 @@ namespace MediaBrowser.Providers.Playlists
 {
     class PlaylistMetadataService : MetadataService<Playlist, ItemLookupInfo>
     {
-        protected override void MergeData(MetadataResult<Playlist> source, MetadataResult<Playlist> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<Playlist> source, MetadataResult<Playlist> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
 
@@ -34,20 +34,17 @@ namespace MediaBrowser.Providers.Playlists
             }
         }
 
-        protected override ItemUpdateType BeforeSave(Playlist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        protected override ItemUpdateType BeforeSaveInternal(Playlist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
         {
-            var updateType = base.BeforeSave(item, isFullRefresh, currentUpdateType);
+            var updateType = base.BeforeSaveInternal(item, isFullRefresh, currentUpdateType);
 
             if (isFullRefresh || currentUpdateType > ItemUpdateType.None)
             {
                 if (!item.IsLocked && !item.LockedFields.Contains(MetadataFields.Genres))
                 {
-                    var items = item.GetLinkedChildren()
-                        .ToList();
+                    var currentList = item.Genres;
 
-                    var currentList = item.Genres.ToList();
-
-                    item.Genres = items.SelectMany(i => i.Genres)
+                    item.Genres = item.GetLinkedChildren().SelectMany(i => i.Genres)
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
 

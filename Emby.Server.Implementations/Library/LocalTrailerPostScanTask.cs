@@ -3,6 +3,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -45,7 +46,7 @@ namespace Emby.Server.Implementations.Library
                 Recursive = true,
                 DtoOptions = new DtoOptions(false)
 
-            }).ToArray();
+            });
 
             var numComplete = 0;
 
@@ -53,7 +54,7 @@ namespace Emby.Server.Implementations.Library
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                await AssignTrailers(item, trailers).ConfigureAwait(false);
+                AssignTrailers(item, trailers);
 
                 numComplete++;
                 double percent = numComplete;
@@ -64,7 +65,7 @@ namespace Emby.Server.Implementations.Library
             progress.Report(100);
         }
 
-        private async Task AssignTrailers(IHasTrailers item, BaseItem[] channelTrailers)
+        private void AssignTrailers(IHasTrailers item, IEnumerable<BaseItem> channelTrailers)
         {
             if (item is Game)
             {
@@ -90,15 +91,14 @@ namespace Emby.Server.Implementations.Library
             });
 
             var trailerIds = trailers.Select(i => i.Id)
-                .ToList();
+                .ToArray();
 
             if (!trailerIds.SequenceEqual(item.RemoteTrailerIds))
             {
                 item.RemoteTrailerIds = trailerIds;
 
                 var baseItem = (BaseItem)item;
-                await baseItem.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None)
-                        .ConfigureAwait(false);
+                baseItem.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None);
             }
         }
     }

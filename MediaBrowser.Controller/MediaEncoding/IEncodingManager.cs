@@ -1,5 +1,9 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Controller.Providers;
 
 namespace MediaBrowser.Controller.MediaEncoding
 {
@@ -8,9 +12,6 @@ namespace MediaBrowser.Controller.MediaEncoding
         /// <summary>
         /// Refreshes the chapter images.
         /// </summary>
-        /// <param name="options">The options.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task{System.Boolean}.</returns>
-        Task<bool> RefreshChapterImages(ChapterImageRefreshOptions options, CancellationToken cancellationToken);
+        Task<bool> RefreshChapterImages(Video video, IDirectoryService directoryService, List<ChapterInfo> chapters, bool extractImages, bool saveChapters, CancellationToken cancellationToken);
     }
 }

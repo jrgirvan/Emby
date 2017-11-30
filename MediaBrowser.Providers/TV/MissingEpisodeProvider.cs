@@ -191,6 +191,8 @@ namespace MediaBrowser.Providers.TV
                    });
         }
 
+        private const double UnairedEpisodeThresholdDays = 2;
+
         /// <summary>
         /// Adds the missing episodes.
         /// </summary>
@@ -204,7 +206,7 @@ namespace MediaBrowser.Providers.TV
         {
             var existingEpisodes = (from s in series
                                     from c in s.GetRecursiveChildren(i => i is Episode).Cast<Episode>()
-                                    select new Tuple<int, Episode>((c.ParentIndexNumber ?? 0) , c))
+                                    select new Tuple<int, Episode>((c.ParentIndexNumber ?? 0), c))
                                    .ToList();
 
             var lookup = episodeLookup as IList<Tuple<int, int>> ?? episodeLookup.ToList();
@@ -248,8 +250,7 @@ namespace MediaBrowser.Providers.TV
 
                 var targetSeries = DetermineAppropriateSeries(series, tuple.Item1);
 
-                var unairedThresholdDays = 2;
-                now = now.AddDays(0 - unairedThresholdDays);
+                now = now.AddDays(0 - UnairedEpisodeThresholdDays);
 
                 if (airDate.Value < now)
                 {
@@ -331,7 +332,11 @@ namespace MediaBrowser.Providers.TV
 
                         if (!allowMissingEpisodes && i.Episode.IsMissingEpisode)
                         {
-                            return true;
+                            // If it's missing, but not unaired, remove it
+                            if (!i.Episode.PremiereDate.HasValue || i.Episode.PremiereDate.Value.ToLocalTime().Date.AddDays(UnairedEpisodeThresholdDays) < DateTime.Now.Date)
+                            {
+                                return true;
+                            }
                         }
 
                         return false;
@@ -345,8 +350,6 @@ namespace MediaBrowser.Providers.TV
 
             foreach (var episodeToRemove in episodesToRemove.Select(e => e.Episode))
             {
-                _logger.Info("Removing missing/unaired episode {0} {1}x{2}", episodeToRemove.Series.Name, episodeToRemove.ParentIndexNumber, episodeToRemove.IndexNumber);
-
                 await episodeToRemove.Delete(new DeleteOptions
                 {
                     DeleteFileLocation = true
@@ -413,8 +416,6 @@ namespace MediaBrowser.Providers.TV
 
             foreach (var seasonToRemove in seasonsToRemove)
             {
-                _logger.Info("Removing virtual season {0} {1}", seasonToRemove.Series.Name, seasonToRemove.IndexNumber);
-
                 await seasonToRemove.Delete(new DeleteOptions
                 {
                     DeleteFileLocation = true
@@ -461,7 +462,7 @@ namespace MediaBrowser.Providers.TV
 
             episode.SetParent(season);
 
-            await season.AddChild(episode, cancellationToken).ConfigureAwait(false);
+            season.AddChild(episode, cancellationToken);
 
             await episode.RefreshMetadata(new MetadataRefreshOptions(_fileSystem), cancellationToken).ConfigureAwait(false);
         }
@@ -529,7 +530,7 @@ namespace MediaBrowser.Providers.TV
                     settings.CheckCharacters = false;
                     settings.IgnoreProcessingInstructions = true;
                     settings.IgnoreComments = true;
-                    
+
                     // Use XmlReader for best performance
                     using (var reader = XmlReader.Create(streamReader, settings))
                     {

@@ -2,7 +2,6 @@
 using MediaBrowser.Model.Extensions;
 using MediaBrowser.Model.MediaInfo;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Session;
 
@@ -53,9 +52,8 @@ namespace MediaBrowser.Model.Dto
         public Video3DFormat? Video3DFormat { get; set; }
 
         public List<MediaStream> MediaStreams { get; set; }
-        public List<string> PlayableStreamFileNames { get; set; }
 
-        public List<string> Formats { get; set; }
+        public string[] Formats { get; set; }
 
         public int? Bitrate { get; set; }
 
@@ -70,10 +68,9 @@ namespace MediaBrowser.Model.Dto
 
         public MediaSourceInfo()
         {
-            Formats = new List<string>();
+            Formats = new string[] { };
             MediaStreams = new List<MediaStream>();
             RequiredHttpHeaders = new Dictionary<string, string>();
-            PlayableStreamFileNames = new List<string>();
             SupportsTranscoding = true;
             SupportsDirectStream = true;
             SupportsDirectPlay = true;
@@ -92,18 +89,14 @@ namespace MediaBrowser.Model.Dto
                 return;
             }
 
-            var internalStreams = MediaStreams
-                .Where(i => !i.IsExternal)
-                .ToList();
-
-            if (internalStreams.Count == 0)
+            var bitrate = 0;
+            foreach (var stream in MediaStreams)
             {
-                return;
+                if (!stream.IsExternal)
+                {
+                    bitrate += stream.BitRate ?? 0;
+                }
             }
-
-            var bitrate = internalStreams
-                .Select(m => m.BitRate ?? 0)
-                .Sum();
 
             if (bitrate > 0)
             {
@@ -164,7 +157,7 @@ namespace MediaBrowser.Model.Dto
             {
                 foreach (MediaStream i in MediaStreams)
                 {
-                    if (i.Type == MediaStreamType.Video && StringHelper.IndexOfIgnoreCase(i.Codec ?? string.Empty, "jpeg") == -1)
+                    if (i.Type == MediaStreamType.Video)
                     {
                         return i;
                     }

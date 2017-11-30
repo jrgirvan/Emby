@@ -30,7 +30,6 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
-using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.NetworkInformation;
@@ -98,16 +97,14 @@ namespace Mono.Nat
             {
                 try
                 {
-                    var enabledProtocols = EnabledProtocols.ToList();
-
-                    if (enabledProtocols.Contains(PmpSearcher.Instance.Protocol))
+                    if (EnabledProtocols.Contains(PmpSearcher.Instance.Protocol))
                     {
                         await Receive(PmpSearcher.Instance, PmpSearcher.sockets).ConfigureAwait(false);
                     }
 
                     foreach (ISearcher s in controllers)
                     {
-                        if (s.NextSearch < DateTime.Now && enabledProtocols.Contains(s.Protocol))
+                        if (s.NextSearch < DateTime.Now && EnabledProtocols.Contains(s.Protocol))
                         {
                             Log("Searching for: {0}", s.GetType().Name);
                             s.Search();
@@ -211,14 +208,14 @@ namespace Mono.Nat
             }
         }
 
-        public static void Handle(IPAddress localAddress, UpnpDeviceInfo deviceInfo, IPEndPoint endpoint, NatProtocol protocol)
+        public static async Task Handle(IPAddress localAddress, UpnpDeviceInfo deviceInfo, IPEndPoint endpoint, NatProtocol protocol)
         {
             switch (protocol)
             {
                 case NatProtocol.Upnp:
                     var searcher = new UpnpSearcher(Logger, HttpClient);
                     searcher.DeviceFound += Searcher_DeviceFound;
-                    searcher.Handle(localAddress, deviceInfo, endpoint);
+                    await searcher.Handle(localAddress, deviceInfo, endpoint).ConfigureAwait(false);
                     break;
                 default:
                     throw new ArgumentException("Unexpected protocol: " + protocol);

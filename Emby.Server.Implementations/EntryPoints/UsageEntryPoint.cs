@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.EntryPoints
 {
@@ -58,7 +59,7 @@ namespace Emby.Server.Implementations.EntryPoints
                     session.ApplicationVersion
                 };
 
-                var key = string.Join("_", keys.ToArray()).GetMD5();
+                var key = string.Join("_", keys.ToArray(keys.Count)).GetMD5();
 
                 _apps.GetOrAdd(key, guid => GetNewClientInfo(session));
             }
@@ -73,7 +74,7 @@ namespace Emby.Server.Implementations.EntryPoints
 
             try
             {
-                await new UsageReporter(_applicationHost, _httpClient, _userManager, _logger)
+                await new UsageReporter(_applicationHost, _httpClient, _logger)
                     .ReportAppUsage(client, CancellationToken.None)
                     .ConfigureAwait(false);
             }
@@ -116,7 +117,7 @@ namespace Emby.Server.Implementations.EntryPoints
 
             try
             {
-                await new UsageReporter(_applicationHost, _httpClient, _userManager, _logger)
+                await new UsageReporter(_applicationHost, _httpClient, _logger)
                     .ReportServerUsage(CancellationToken.None)
                     .ConfigureAwait(false);
             }
@@ -129,6 +130,7 @@ namespace Emby.Server.Implementations.EntryPoints
         public void Dispose()
         {
             _sessionManager.SessionStarted -= _sessionManager_SessionStarted;
+            GC.SuppressFinalize(this);
         }
     }
 }

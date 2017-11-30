@@ -9,7 +9,6 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Serialization;
-using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Controller.LiveTv
 {
@@ -48,22 +47,50 @@ namespace MediaBrowser.Controller.LiveTv
             return list;
         }
 
-        public override double? GetDefaultPrimaryImageAspectRatio()
+        public static double? GetDefaultPrimaryImageAspectRatio(IHasProgramAttributes item)
         {
-            if (IsMovie)
-            {
-                double value = 2;
-                value /= 3;
+            var serviceName = item.ServiceName;
 
-                return value;
+            if (item.IsMovie)
+            {
+                if (string.Equals(serviceName, EmbyServiceName, StringComparison.OrdinalIgnoreCase) || string.Equals(serviceName, "Next Pvr", StringComparison.OrdinalIgnoreCase))
+                {
+                    double value = 2;
+                    value /= 3;
+
+                    return value;
+                }
+                else
+                {
+                    double value = 16;
+                    value /= 9;
+
+                    return value;
+                }
             }
             else
             {
-                double value = 2;
-                value /= 3;
+                if (string.Equals(serviceName, EmbyServiceName, StringComparison.OrdinalIgnoreCase) || string.Equals(serviceName, "Next Pvr", StringComparison.OrdinalIgnoreCase))
+                {
+                    double value = 2;
+                    value /= 3;
 
-                return value;
+                    return value;
+                }
+                else
+                {
+                    double value = 16;
+                    value /= 9;
+
+                    return value;
+                }
             }
+        }
+
+        private static string EmbyServiceName = "Emby";
+        public override double? GetDefaultPrimaryImageAspectRatio()
+        {
+            return GetDefaultPrimaryImageAspectRatio(this);
         }
 
         [IgnoreDataMember]
@@ -91,6 +118,9 @@ namespace MediaBrowser.Controller.LiveTv
         /// <value>The episode title.</value>
         [IgnoreDataMember]
         public string EpisodeTitle { get; set; }
+
+        [IgnoreDataMember]
+        public string ShowId { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether this instance is movie.
@@ -227,7 +257,7 @@ namespace MediaBrowser.Controller.LiveTv
         public LiveTvProgramLookupInfo GetLookupInfo()
         {
             var info = GetItemLookupInfo<LiveTvProgramLookupInfo>();
-            info.IsMovie = IsMovie; 
+            info.IsMovie = IsMovie;
             return info;
         }
 

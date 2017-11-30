@@ -1,6 +1,7 @@
 ﻿using MediaBrowser.Model.Dlna;
 using System.Linq;
 using System.Xml.Serialization;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Dlna.Profiles
 {
@@ -64,13 +65,15 @@ namespace Emby.Dlna.Profiles
             {
                 new DirectPlayProfile
                 {
-                    Container = "m4v,mpegts,ts,3gp,mov,xvid,vob,mkv,wmv,asf,ogm,ogv,m2v,avi,mpg,mpeg,mp4,webm,wtv,m2ts,dvr-ms",
+                    // play all
+                    Container = "",
                     Type = DlnaProfileType.Video
                 },
 
                 new DirectPlayProfile
                 {
-                    Container = "aac,mp3,mpa,wav,wma,mp2,ogg,oga,webma,ape,opus,flac,m4a",
+                    // play all
+                    Container = "",
                     Type = DlnaProfileType.Audio
                 }
             };
@@ -172,7 +175,7 @@ namespace Emby.Dlna.Profiles
                 Value = value
             });
 
-            XmlRootAttributes = list.ToArray();
+            XmlRootAttributes = list.ToArray(list.Count);
         }
     }
 }

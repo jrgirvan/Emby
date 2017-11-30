@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace Emby.Server.Implementations.Session
 {
-    public class HttpSessionController : ISessionController, IDisposable
+    public class HttpSessionController : ISessionController
     {
         private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _json;
@@ -66,19 +66,22 @@ namespace Emby.Server.Implementations.Session
             return SendMessage(name, new Dictionary<string, string>(), cancellationToken);
         }
 
-        private Task SendMessage(string name,
+        private async Task SendMessage(string name,
             Dictionary<string, string> args,
             CancellationToken cancellationToken)
         {
             var url = PostUrl + "/" + name + ToQueryString(args);
 
-            return _httpClient.Post(new HttpRequestOptions
+            using ((await _httpClient.Post(new HttpRequestOptions
             {
                 Url = url,
                 CancellationToken = cancellationToken,
                 BufferContent = false
 
-            });
+            }).ConfigureAwait(false)))
+            {
+
+            }
         }
 
         public Task SendSessionEndedNotification(SessionInfoDto sessionInfo, CancellationToken cancellationToken)
@@ -105,6 +108,18 @@ namespace Emby.Server.Implementations.Session
             if (command.StartPositionTicks.HasValue)
             {
                 dict["StartPositionTicks"] = command.StartPositionTicks.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            if (command.AudioStreamIndex.HasValue)
+            {
+                dict["AudioStreamIndex"] = command.AudioStreamIndex.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            if (command.SubtitleStreamIndex.HasValue)
+            {
+                dict["SubtitleStreamIndex"] = command.SubtitleStreamIndex.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            if (!string.IsNullOrWhiteSpace(command.MediaSourceId))
+            {
+                dict["MediaSourceId"] = command.MediaSourceId;
             }
 
             return SendMessage(command.PlayCommand.ToString(), dict, cancellationToken);
@@ -194,10 +209,6 @@ namespace Emby.Server.Implementations.Session
             }
 
             return "?" + args;
-        }
-
-        public void Dispose()
-        {
         }
     }
 }

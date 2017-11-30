@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.WebDashboard.Api
 {
@@ -39,8 +40,6 @@ namespace MediaBrowser.WebDashboard.Api
 
             if (resourceStream != null)
             {
-                // Don't apply any caching for html pages
-                // jQuery ajax doesn't seem to handle if-modified-since correctly
                 if (IsFormat(virtualPath, "html"))
                 {
                     if (IsCoreHtml(virtualPath))
@@ -153,7 +152,7 @@ namespace MediaBrowser.WebDashboard.Api
                     }
                 }
 
-                html = html.Replace("<head>", "<head>" + GetMetaTags(mode) + GetCommonCss(mode, appVersion));
+                html = html.Replace("<head>", "<head>" + GetMetaTags(mode));
 
                 // Disable embedded scripts from plugins. We'll run them later once resources have loaded
                 if (html.IndexOf("<script", StringComparison.OrdinalIgnoreCase) != -1)
@@ -231,26 +230,6 @@ namespace MediaBrowser.WebDashboard.Api
         }
 
         /// <summary>
-        /// Gets the common CSS.
-        /// </summary>
-        /// <param name="mode">The mode.</param>
-        /// <param name="version">The version.</param>
-        /// <returns>System.String.</returns>
-        private string GetCommonCss(string mode, string version)
-        {
-            var versionString = string.IsNullOrWhiteSpace(mode) ? "?v=" + version : string.Empty;
-
-            var files = new[]
-                            {
-                                      "css/site.css" + versionString
-                            };
-
-            var tags = files.Select(s => string.Format("<link rel=\"stylesheet\" href=\"{0}\" async />", s)).ToArray();
-
-            return string.Join(string.Empty, tags);
-        }
-
-        /// <summary>
         /// Gets the common javascript.
         /// </summary>
         /// <param name="mode">The mode.</param>
@@ -266,7 +245,7 @@ namespace MediaBrowser.WebDashboard.Api
                 builder.AppendFormat("window.appMode='{0}';", mode);
             }
 
-            if (string.IsNullOrWhiteSpace(mode))
+            else
             {
                 builder.AppendFormat("window.dashboardVersion='{0}';", version);
             }
@@ -284,7 +263,7 @@ namespace MediaBrowser.WebDashboard.Api
                 files.Insert(0, "cordova.js");
             }
 
-            var tags = files.Select(s => string.Format("<script src=\"{0}\" defer></script>", s)).ToArray();
+            var tags = files.Select(s => string.Format("<script src=\"{0}\" defer></script>", s)).ToArray(files.Count);
 
             builder.Append(string.Join(string.Empty, tags));
 

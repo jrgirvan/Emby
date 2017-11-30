@@ -24,6 +24,7 @@ using MediaBrowser.Controller.Dto;
 using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Serialization;
 using Priority_Queue;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Manager
 {
@@ -117,7 +118,29 @@ namespace MediaBrowser.Providers.Manager
 
         public Task<ItemUpdateType> RefreshSingleItem(IHasMetadata item, MetadataRefreshOptions options, CancellationToken cancellationToken)
         {
-            var service = _metadataServices.FirstOrDefault(i => i.CanRefresh(item));
+            IMetadataService service = null;
+            var type = item.GetType();
+
+            foreach (var current in _metadataServices)
+            {
+                if (current.CanRefreshPrimary(type))
+                {
+                    service = current;
+                    break;
+                }
+            }
+
+            if (service == null)
+            {
+                foreach (var current in _metadataServices)
+                {
+                    if (current.CanRefresh(item))
+                    {
+                        service = current;
+                        break;
+                    }
+                }
+            }
 
             if (service != null)
             {
@@ -128,26 +151,26 @@ namespace MediaBrowser.Providers.Manager
             return Task.FromResult(ItemUpdateType.None);
         }
 
-        public async Task SaveImage(IHasImages item, string url, ImageType type, int? imageIndex, CancellationToken cancellationToken)
+        public async Task SaveImage(IHasMetadata item, string url, ImageType type, int? imageIndex, CancellationToken cancellationToken)
         {
-            var response = await _httpClient.GetResponse(new HttpRequestOptions
+            using (var response = await _httpClient.GetResponse(new HttpRequestOptions
             {
                 CancellationToken = cancellationToken,
                 Url = url,
                 BufferContent = false
 
-            }).ConfigureAwait(false);
-
-            await SaveImage(item, response.Content, response.ContentType, type, imageIndex, cancellationToken)
-                    .ConfigureAwait(false);
+            }).ConfigureAwait(false))
+            {
+                await SaveImage(item, response.Content, response.ContentType, type, imageIndex, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        public Task SaveImage(IHasImages item, Stream source, string mimeType, ImageType type, int? imageIndex, CancellationToken cancellationToken)
+        public Task SaveImage(IHasMetadata item, Stream source, string mimeType, ImageType type, int? imageIndex, CancellationToken cancellationToken)
         {
             return new ImageSaver(ConfigurationManager, _libraryMonitor, _fileSystem, _logger, _memoryStreamProvider).SaveImage(item, source, mimeType, type, imageIndex, cancellationToken);
         }
 
-        public Task SaveImage(IHasImages item, string source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken)
+        public Task SaveImage(IHasMetadata item, string source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -159,7 +182,7 @@ namespace MediaBrowser.Providers.Manager
             return new ImageSaver(ConfigurationManager, _libraryMonitor, _fileSystem, _logger, _memoryStreamProvider).SaveImage(item, fileStream, mimeType, type, imageIndex, saveLocallyWithMedia, cancellationToken);
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetAvailableRemoteImages(IHasImages item, RemoteImageQuery query, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetAvailableRemoteImages(IHasMetadata item, RemoteImageQuery query, CancellationToken cancellationToken)
         {
             var providers = GetRemoteImageProviders(item, query.IncludeDisabledProviders);
 
@@ -182,9 +205,7 @@ namespace MediaBrowser.Providers.Manager
 
             var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
-            var images = results.SelectMany(i => i.ToList());
-
-            return images;
+            return results.SelectMany(i => i.ToList());
         }
 
         /// <summary>
@@ -196,7 +217,7 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="preferredLanguages">The preferred languages.</param>
         /// <param name="type">The type.</param>
         /// <returns>Task{IEnumerable{RemoteImageInfo}}.</returns>
-        private async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasImages item, CancellationToken cancellationToken, IRemoteImageProvider provider, List<string> preferredLanguages, ImageType? type = null)
+        private async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken, IRemoteImageProvider provider, List<string> preferredLanguages, ImageType? type = null)
         {
             try
             {
@@ -232,21 +253,21 @@ namespace MediaBrowser.Providers.Manager
         /// </summary>
         /// <param name="item">The item.</param>
         /// <returns>IEnumerable{IImageProvider}.</returns>
-        public IEnumerable<ImageProviderInfo> GetRemoteImageProviderInfo(IHasImages item)
+        public IEnumerable<ImageProviderInfo> GetRemoteImageProviderInfo(IHasMetadata item)
         {
             return GetRemoteImageProviders(item, true).Select(i => new ImageProviderInfo
             {
                 Name = i.Name,
-                SupportedImages = i.GetSupportedImages(item).ToList()
+                SupportedImages = i.GetSupportedImages(item).ToArray()
             });
         }
 
-        public IEnumerable<IImageProvider> GetImageProviders(IHasImages item, ImageRefreshOptions refreshOptions)
+        public IEnumerable<IImageProvider> GetImageProviders(IHasMetadata item, ImageRefreshOptions refreshOptions)
         {
             return GetImageProviders(item, GetMetadataOptions(item), refreshOptions, false);
         }
 
-        private IEnumerable<IImageProvider> GetImageProviders(IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
+        private IEnumerable<IImageProvider> GetImageProviders(IHasMetadata item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             // Avoid implicitly captured closure
             var currentOptions = options;
@@ -291,7 +312,7 @@ namespace MediaBrowser.Providers.Manager
                 .ThenBy(GetDefaultOrder);
         }
 
-        private IEnumerable<IRemoteImageProvider> GetRemoteImageProviders(IHasImages item, bool includeDisabled)
+        private IEnumerable<IRemoteImageProvider> GetRemoteImageProviders(IHasMetadata item, bool includeDisabled)
         {
             var options = GetMetadataOptions(item);
 
@@ -339,7 +360,7 @@ namespace MediaBrowser.Providers.Manager
             return true;
         }
 
-        private bool CanRefresh(IImageProvider provider, IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
+        private bool CanRefresh(IImageProvider provider, IHasMetadata item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             if (!includeDisabled)
             {
@@ -437,9 +458,9 @@ namespace MediaBrowser.Providers.Manager
             return 0;
         }
 
-        public IEnumerable<MetadataPluginSummary> GetAllMetadataPlugins()
+        public MetadataPluginSummary[] GetAllMetadataPlugins()
         {
-            var list = new List<MetadataPluginSummary>
+            return new MetadataPluginSummary[]
             {
                 GetPluginSummary<Game>(),
                 GetPluginSummary<GameSystem>(),
@@ -453,6 +474,8 @@ namespace MediaBrowser.Providers.Manager
                 GetPluginSummary<MusicAlbum>(),
                 GetPluginSummary<MusicArtist>(),
                 GetPluginSummary<Audio>(),
+                GetPluginSummary<AudioBook>(),
+                GetPluginSummary<AudioPodcast>(),
                 GetPluginSummary<Genre>(),
                 GetPluginSummary<Studio>(),
                 GetPluginSummary<GameGenre>(),
@@ -464,8 +487,6 @@ namespace MediaBrowser.Providers.Manager
                 GetPluginSummary<LiveTvVideoRecording>(),
                 GetPluginSummary<LiveTvAudioRecording>()
             };
-
-            return list;
         }
 
         private MetadataPluginSummary GetPluginSummary<T>()
@@ -487,8 +508,12 @@ namespace MediaBrowser.Providers.Manager
 
             var imageProviders = GetImageProviders(dummy, options, new ImageRefreshOptions(new DirectoryService(_logger, _fileSystem)), true).ToList();
 
-            AddMetadataPlugins(summary.Plugins, dummy, options);
-            AddImagePlugins(summary.Plugins, dummy, imageProviders);
+            var pluginList = summary.Plugins.ToList();
+
+            AddMetadataPlugins(pluginList, dummy, options);
+            AddImagePlugins(pluginList, dummy, imageProviders);
+
+            summary.Plugins = pluginList.ToArray(pluginList.Count);
 
             var supportedImageTypes = imageProviders.OfType<IRemoteImageProvider>()
                 .SelectMany(i => i.GetSupportedImages(dummy))
@@ -497,7 +522,7 @@ namespace MediaBrowser.Providers.Manager
             supportedImageTypes.AddRange(imageProviders.OfType<IDynamicImageProvider>()
                 .SelectMany(i => i.GetSupportedImages(dummy)));
 
-            summary.SupportedImageTypes = supportedImageTypes.Distinct().ToList();
+            summary.SupportedImageTypes = supportedImageTypes.Distinct().ToArray();
 
             return summary;
         }
@@ -530,7 +555,7 @@ namespace MediaBrowser.Providers.Manager
         }
 
         private void AddImagePlugins<T>(List<MetadataPlugin> list, T item, List<IImageProvider> imageProviders)
-            where T : IHasImages
+            where T : IHasMetadata
         {
 
             // Locals
@@ -550,7 +575,7 @@ namespace MediaBrowser.Providers.Manager
             }));
         }
 
-        public MetadataOptions GetMetadataOptions(IHasImages item)
+        public MetadataOptions GetMetadataOptions(IHasMetadata item)
         {
             var type = item.GetType().Name;
 
@@ -559,30 +584,20 @@ namespace MediaBrowser.Providers.Manager
                 new MetadataOptions();
         }
 
-        private Task _completedTask = Task.FromResult(true);
         /// <summary>
         /// Saves the metadata.
         /// </summary>
-        /// <param name="item">The item.</param>
-        /// <param name="updateType">Type of the update.</param>
-        /// <returns>Task.</returns>
-        public Task SaveMetadata(IHasMetadata item, ItemUpdateType updateType)
+        public void SaveMetadata(IHasMetadata item, ItemUpdateType updateType)
         {
             SaveMetadata(item, updateType, _savers);
-            return _completedTask;
         }
 
         /// <summary>
         /// Saves the metadata.
         /// </summary>
-        /// <param name="item">The item.</param>
-        /// <param name="updateType">Type of the update.</param>
-        /// <param name="savers">The savers.</param>
-        /// <returns>Task.</returns>
-        public Task SaveMetadata(IHasMetadata item, ItemUpdateType updateType, IEnumerable<string> savers)
+        public void SaveMetadata(IHasMetadata item, ItemUpdateType updateType, IEnumerable<string> savers)
         {
             SaveMetadata(item, updateType, _savers.Where(i => savers.Contains(i.Name, StringComparer.OrdinalIgnoreCase)));
-            return _completedTask;
         }
 
         /// <summary>
@@ -933,7 +948,8 @@ namespace MediaBrowser.Providers.Manager
                 }
                 else
                 {
-                    throw new Exception(string.Format("Refresh for item {0} {1} is not in progress", item.GetType().Name, item.Id.ToString("N")));
+                    // TODO: Need to hunt down the conditions for this happening
+                    //throw new Exception(string.Format("Refresh for item {0} {1} is not in progress", item.GetType().Name, item.Id.ToString("N")));
                 }
             }
         }
@@ -1109,6 +1125,7 @@ namespace MediaBrowser.Providers.Manager
             {
                 _disposeCancellationTokenSource.Cancel();
             }
+            GC.SuppressFinalize(this);
         }
     }
 }

@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -13,18 +12,18 @@ namespace MediaBrowser.Controller.Providers
     public class DirectoryService : IDirectoryService
     {
         private readonly ILogger _logger;
-		private readonly IFileSystem _fileSystem;
+        private readonly IFileSystem _fileSystem;
 
-        private readonly ConcurrentDictionary<string, Dictionary<string, FileSystemMetadata>> _cache =
-            new ConcurrentDictionary<string, Dictionary<string, FileSystemMetadata>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, FileSystemMetadata[]> _cache = new Dictionary<string, FileSystemMetadata[]>(StringComparer.OrdinalIgnoreCase);
 
-        private readonly ConcurrentDictionary<string, FileSystemMetadata> _fileCache =
-        new ConcurrentDictionary<string, FileSystemMetadata>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, FileSystemMetadata> _fileCache = new Dictionary<string, FileSystemMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, List<string>> _filePathCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         public DirectoryService(ILogger logger, IFileSystem fileSystem)
         {
             _logger = logger;
-			_fileSystem = fileSystem;
+            _fileSystem = fileSystem;
         }
 
         public DirectoryService(IFileSystem fileSystem)
@@ -32,85 +31,48 @@ namespace MediaBrowser.Controller.Providers
         {
         }
 
-        public IEnumerable<FileSystemMetadata> GetFileSystemEntries(string path)
-        {
-            return GetFileSystemEntries(path, false);
-        }
-
-        public Dictionary<string, FileSystemMetadata> GetFileSystemDictionary(string path)
-        {
-            return GetFileSystemDictionary(path, false);
-        }
-
-        private Dictionary<string, FileSystemMetadata> GetFileSystemDictionary(string path, bool clearCache)
+        public FileSystemMetadata[] GetFileSystemEntries(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
                 throw new ArgumentNullException("path");
             }
 
-            Dictionary<string, FileSystemMetadata> entries;
-
-            if (clearCache)
-            {
-                Dictionary<string, FileSystemMetadata> removed;
-
-                _cache.TryRemove(path, out removed);
-            }
+            FileSystemMetadata[] entries;
 
             if (!_cache.TryGetValue(path, out entries))
             {
                 //_logger.Debug("Getting files for " + path);
 
-                entries = new Dictionary<string, FileSystemMetadata>(StringComparer.OrdinalIgnoreCase);
-
                 try
                 {
                     // using EnumerateFileSystemInfos doesn't handle reparse points (symlinks)
-                    var list = _fileSystem.GetFileSystemEntries(path)
-                        .ToList();
-
-                    // Seeing dupes on some users file system for some reason
-                    foreach (var item in list)
-                    {
-                        entries[item.FullName] = item;
-                    }
+                    entries = _fileSystem.GetFileSystemEntries(path).ToArray();
                 }
                 catch (IOException)
                 {
+                    entries = new FileSystemMetadata[] { };
                 }
 
-                //var group = entries.ToLookup(i => _fileSystem.GetDirectoryName(i.FullName)).ToList();
-
-                _cache.TryAdd(path, entries);
+                //_cache.TryAdd(path, entries);
+                _cache[path] = entries;
             }
 
             return entries;
         }
 
-        private IEnumerable<FileSystemMetadata> GetFileSystemEntries(string path, bool clearCache)
+        public List<FileSystemMetadata> GetFiles(string path)
         {
-            return GetFileSystemDictionary(path, clearCache).Values;
-        }
-
-        public IEnumerable<FileSystemMetadata> GetFiles(string path)
-        {
-            return GetFiles(path, false);
-        }
-
-        public IEnumerable<FileSystemMetadata> GetFiles(string path, bool clearCache)
-        {
-            return GetFileSystemEntries(path, clearCache).Where(i => !i.IsDirectory);
-        }
-
-        public IEnumerable<string> GetFilePaths(string path)
-        {
-            return _fileSystem.GetFilePaths(path);
-        }
-
-        public IEnumerable<string> GetFilePaths(string path, bool clearCache)
-        {
-            return _fileSystem.GetFilePaths(path);
+            var list = new List<FileSystemMetadata>();
+            var items = GetFileSystemEntries(path);
+            foreach (var item in items)
+            {
+                if (!item.IsDirectory)
+                {
+                    list.Add(item);
+                }
+            }
+            return list;
         }
 
         public FileSystemMetadata GetFile(string path)
@@ -122,7 +84,8 @@ namespace MediaBrowser.Controller.Providers
 
                 if (file != null && file.Exists)
                 {
-                    _fileCache.TryAdd(path, file);
+                    //_fileCache.TryAdd(path, file);
+                    _fileCache[path] = file;
                 }
                 else
                 {
@@ -134,9 +97,23 @@ namespace MediaBrowser.Controller.Providers
             //return _fileSystem.GetFileInfo(path);
         }
 
-        public IEnumerable<FileSystemMetadata> GetDirectories(string path)
+        public List<string> GetFilePaths(string path)
         {
-            return GetFileSystemEntries(path, false).Where(i => i.IsDirectory);
+            return GetFilePaths(path, false);
         }
+
+        public List<string> GetFilePaths(string path, bool clearCache)
+        {
+            List<string> result;
+            if (clearCache || !_filePathCache.TryGetValue(path, out result))
+            {
+                result = _fileSystem.GetFilePaths(path).ToList();
+
+                _filePathCache[path] = result;
+            }
+
+            return result;
+        }
+
     }
 }

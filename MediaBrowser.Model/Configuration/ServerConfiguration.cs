@@ -46,7 +46,6 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [use HTTPS]; otherwise, <c>false</c>.</value>
         public bool EnableHttps { get; set; }
-        public bool EnableLocalizedGuids { get; set; }
         public bool EnableNormalizedItemByNameIds { get; set; }
 
         /// <summary>
@@ -76,12 +75,6 @@ namespace MediaBrowser.Model.Configuration
         /// <value>The metadata path.</value>
         public string MetadataPath { get; set; }
         public string MetadataNetworkPath { get; set; }
-
-        /// <summary>
-        /// Gets or sets the display name of the season zero.
-        /// </summary>
-        /// <value>The display name of the season zero.</value>
-        public string SeasonZeroDisplayName { get; set; }
 
         /// <summary>
         /// Gets or sets the preferred metadata language.
@@ -162,7 +155,6 @@ namespace MediaBrowser.Model.Configuration
 
         public bool EnableAutomaticRestart { get; set; }
         public bool SkipDeserializationForBasicTypes { get; set; }
-        public bool SkipDeserializationForAudio { get; set; }
 
         public string ServerName { get; set; }
         public string WanDdns { get; set; }
@@ -180,7 +172,6 @@ namespace MediaBrowser.Model.Configuration
         public int SchemaVersion { get; set; }
 
         public bool EnableAnonymousUsageReporting { get; set; }
-        public bool EnableStandaloneMusicKeys { get; set; }
         public bool EnableFolderView { get; set; }
         public bool EnableGroupingIntoCollections { get; set; }
         public bool DisplaySpecialsWithinSeasons { get; set; }
@@ -189,6 +180,9 @@ namespace MediaBrowser.Model.Configuration
         public string[] CodecsUsed { get; set; }
         public bool EnableChannelView { get; set; }
         public bool EnableExternalContentInSuggestions { get; set; }
+        public bool RequireHttps { get; set; }
+        public bool IsBehindProxy { get; set; }
+        public bool EnableNewOmdbSupport { get; set; }
 
         public int ImageExtractionTimeoutMs { get; set; }
 
@@ -203,7 +197,6 @@ namespace MediaBrowser.Model.Configuration
             LocalNetworkAddresses = new string[] { };
             CodecsUsed = new string[] { };
             ImageExtractionTimeoutMs = 0;
-            EnableLocalizedGuids = true;
             PathSubstitutions = new PathSubstitution[] { };
             EnableSimpleArtistDetection = true;
 
@@ -218,6 +211,7 @@ namespace MediaBrowser.Model.Configuration
             EnableHttps = false;
             EnableDashboardResponseCaching = true;
             EnableAnonymousUsageReporting = true;
+            EnableCaseSensitiveItemIds = true;
 
             EnableAutomaticRestart = true;
 
@@ -239,8 +233,6 @@ namespace MediaBrowser.Model.Configuration
             SortReplaceCharacters = new[] { ".", "+", "%" };
             SortRemoveCharacters = new[] { ",", "&", "-", "{", "}", "'" };
             SortRemoveWords = new[] { "the", "a", "an" };
-
-            SeasonZeroDisplayName = "Specials";
 
             UICulture = "en-us";
 
@@ -349,7 +341,9 @@ namespace MediaBrowser.Model.Configuration
                             Limit = 1,
                             Type = ImageType.Logo
                         }
-                    }
+                    },
+                    DisabledMetadataFetchers = new []{ "The Open Movie Database" },
+                    DisabledImageFetchers = new []{ "The Open Movie Database", "FanArt" }
                 },
 
                 new MetadataOptions(1, 1280)
@@ -394,7 +388,9 @@ namespace MediaBrowser.Model.Configuration
                             Limit = 1,
                             Type = ImageType.Logo
                         }
-                    }
+                    },
+                    DisabledMetadataFetchers = new []{ "TheMovieDb" },
+                    DisabledImageFetchers = new []{ "TheMovieDb" }
                 },
 
                 new MetadataOptions(1, 1280)
@@ -539,7 +535,8 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Thumb
                         }
                     },
-                    DisabledMetadataFetchers = new []{ "TheMovieDb" }
+                    DisabledMetadataFetchers = new []{ "TheMovieDb" },
+                    DisabledImageFetchers = new [] { "FanArt" }
                 },
 
                 new MetadataOptions(0, 1280)

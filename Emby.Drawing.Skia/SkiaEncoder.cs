@@ -10,22 +10,27 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using MediaBrowser.Controller.Extensions;
+using System.Globalization;
+using MediaBrowser.Model.Globalization;
 
 namespace Emby.Drawing.Skia
 {
     public class SkiaEncoder : IImageEncoder
     {
         private readonly ILogger _logger;
-        private readonly IApplicationPaths _appPaths;
+        private static IApplicationPaths _appPaths;
         private readonly Func<IHttpClient> _httpClientFactory;
         private readonly IFileSystem _fileSystem;
+        private static ILocalizationManager _localizationManager;
 
-        public SkiaEncoder(ILogger logger, IApplicationPaths appPaths, Func<IHttpClient> httpClientFactory, IFileSystem fileSystem)
+        public SkiaEncoder(ILogger logger, IApplicationPaths appPaths, Func<IHttpClient> httpClientFactory, IFileSystem fileSystem, ILocalizationManager localizationManager)
         {
             _logger = logger;
             _appPaths = appPaths;
             _httpClientFactory = httpClientFactory;
             _fileSystem = fileSystem;
+            _localizationManager = localizationManager;
 
             LogVersion();
         }
@@ -40,7 +45,9 @@ namespace Emby.Drawing.Skia
                     "jpeg",
                     "jpg",
                     "png",
+
                     "dng",
+
                     "webp",
                     "gif",
                     "bmp",
@@ -48,7 +55,11 @@ namespace Emby.Drawing.Skia
                     "astc",
                     "ktx",
                     "pkm",
-                    "wbmp"
+                    "wbmp",
+
+                    // working on windows at least
+                    "cr2",
+                    "nef"
                 };
             }
         }
@@ -74,8 +85,9 @@ namespace Emby.Drawing.Skia
             return typeof(SKBitmap).GetTypeInfo().Assembly.GetName().Version.ToString();
         }
 
-        private static bool IsWhiteSpace(SKColor color)
+        private static bool IsTransparent(SKColor color)
         {
+
             return (color.Red == 255 && color.Green == 255 && color.Blue == 255) || color.Alpha == 0;
         }
 
@@ -96,11 +108,11 @@ namespace Emby.Drawing.Skia
             }
         }
 
-        private static bool IsAllWhiteRow(SKBitmap bmp, int row)
+        private static bool IsTransparentRow(SKBitmap bmp, int row)
         {
             for (var i = 0; i < bmp.Width; ++i)
             {
-                if (!IsWhiteSpace(bmp.GetPixel(i, row)))
+                if (!IsTransparent(bmp.GetPixel(i, row)))
                 {
                     return false;
                 }
@@ -108,11 +120,11 @@ namespace Emby.Drawing.Skia
             return true;
         }
 
-        private static bool IsAllWhiteColumn(SKBitmap bmp, int col)
+        private static bool IsTransparentColumn(SKBitmap bmp, int col)
         {
             for (var i = 0; i < bmp.Height; ++i)
             {
-                if (!IsWhiteSpace(bmp.GetPixel(col, i)))
+                if (!IsTransparent(bmp.GetPixel(col, i)))
                 {
                     return false;
                 }
@@ -125,7 +137,7 @@ namespace Emby.Drawing.Skia
             var topmost = 0;
             for (int row = 0; row < bitmap.Height; ++row)
             {
-                if (IsAllWhiteRow(bitmap, row))
+                if (IsTransparentRow(bitmap, row))
                     topmost = row + 1;
                 else break;
             }
@@ -133,7 +145,7 @@ namespace Emby.Drawing.Skia
             int bottommost = bitmap.Height;
             for (int row = bitmap.Height - 1; row >= 0; --row)
             {
-                if (IsAllWhiteRow(bitmap, row))
+                if (IsTransparentRow(bitmap, row))
                     bottommost = row;
                 else break;
             }
@@ -141,7 +153,7 @@ namespace Emby.Drawing.Skia
             int leftmost = 0, rightmost = bitmap.Width;
             for (int col = 0; col < bitmap.Width; ++col)
             {
-                if (IsAllWhiteColumn(bitmap, col))
+                if (IsTransparentColumn(bitmap, col))
                     leftmost = col + 1;
                 else
                     break;
@@ -149,7 +161,7 @@ namespace Emby.Drawing.Skia
 
             for (int col = bitmap.Width - 1; col >= 0; --col)
             {
-                if (IsAllWhiteColumn(bitmap, col))
+                if (IsTransparentColumn(bitmap, col))
                     rightmost = col;
                 else
                     break;
@@ -183,33 +195,87 @@ namespace Emby.Drawing.Skia
             }
         }
 
-        private static string[] TransparentImageTypes = new string[] { ".png", ".gif", ".webp" };
-        internal static SKBitmap Decode(string path, bool forceCleanBitmap, out SKCodecOrigin origin)
+        private static bool HasDiacritics(string text)
         {
+            return !String.Equals(text, text.RemoveDiacritics(), StringComparison.Ordinal);
+        }
+
+        private static bool RequiresSpecialCharacterHack(string path)
+        {
+            if (_localizationManager.HasUnicodeCategory(path, UnicodeCategory.OtherLetter))
+            {
+                return true;
+            }
+
+            if (HasDiacritics(path))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string NormalizePath(string path, IFileSystem fileSystem)
+        {
+            if (!RequiresSpecialCharacterHack(path))
+            {
+                return path;
+            }
+
+            var tempPath = Path.Combine(_appPaths.TempDirectory, Guid.NewGuid() + Path.GetExtension(path) ?? string.Empty);
+
+            fileSystem.CopyFile(path, tempPath, true);
+
+            return tempPath;
+        }
+
+        private static string[] TransparentImageTypes = new string[] { ".png", ".gif", ".webp" };
+        internal static SKBitmap Decode(string path, bool forceCleanBitmap, IFileSystem fileSystem, out SKCodecOrigin origin)
+        {
+            if (!fileSystem.FileExists(path))
+            {
+                throw new FileNotFoundException("File not found", path);
+            }
+
             var requiresTransparencyHack = TransparentImageTypes.Contains(Path.GetExtension(path) ?? string.Empty);
 
             if (requiresTransparencyHack || forceCleanBitmap)
             {
-                using (var stream = new SKFileStream(path))
+                using (var stream = new SKFileStream(NormalizePath(path, fileSystem)))
                 {
-                    var codec = SKCodec.Create(stream);
+                    using (var codec = SKCodec.Create(stream))
+                    {
+                        if (codec == null)
+                        {
+                            origin = SKCodecOrigin.TopLeft;
+                            return null;
+                        }
 
-                    // create the bitmap
-                    var bitmap = new SKBitmap(codec.Info.Width, codec.Info.Height, !requiresTransparencyHack);
-                    // decode
-                    codec.GetPixels(bitmap.Info, bitmap.GetPixels());
+                        // create the bitmap
+                        var bitmap = new SKBitmap(codec.Info.Width, codec.Info.Height, !requiresTransparencyHack);
 
-                    origin = codec.Origin;
+                        if (bitmap != null)
+                        {
+                            // decode
+                            codec.GetPixels(bitmap.Info, bitmap.GetPixels());
 
-                    return bitmap;
+                            origin = codec.Origin;
+                        }
+                        else
+                        {
+                            origin = SKCodecOrigin.TopLeft;
+                        }
+
+                        return bitmap;
+                    }
                 }
             }
 
-            var resultBitmap = SKBitmap.Decode(path);
+            var resultBitmap = SKBitmap.Decode(NormalizePath(path, fileSystem));
 
             if (resultBitmap == null)
             {
-                return Decode(path, true, out origin);
+                return Decode(path, true, fileSystem, out origin);
             }
 
             // If we have to resize these they often end up distorted
@@ -217,7 +283,7 @@ namespace Emby.Drawing.Skia
             {
                 using (resultBitmap)
                 {
-                    return Decode(path, true, out origin);
+                    return Decode(path, true, fileSystem, out origin);
                 }
             }
 
@@ -229,16 +295,16 @@ namespace Emby.Drawing.Skia
         {
             if (cropWhitespace)
             {
-                using (var bitmap = Decode(path, forceAnalyzeBitmap, out origin))
+                using (var bitmap = Decode(path, forceAnalyzeBitmap, _fileSystem, out origin))
                 {
                     return CropWhiteSpace(bitmap);
                 }
             }
 
-            return Decode(path, forceAnalyzeBitmap, out origin);
+            return Decode(path, forceAnalyzeBitmap, _fileSystem, out origin);
         }
 
-        private SKBitmap GetBitmap(string path, bool cropWhitespace, bool autoOrient, ImageOrientation? orientation)
+        private SKBitmap GetBitmap(string path, bool cropWhitespace, bool autoOrient)
         {
             SKCodecOrigin origin;
 
@@ -246,11 +312,14 @@ namespace Emby.Drawing.Skia
             {
                 var bitmap = GetBitmap(path, cropWhitespace, true, out origin);
 
-                if (origin != SKCodecOrigin.TopLeft)
+                if (bitmap != null)
                 {
-                    using (bitmap)
+                    if (origin != SKCodecOrigin.TopLeft)
                     {
-                        return RotateAndFlip(bitmap, origin);
+                        using (bitmap)
+                        {
+                            return OrientImage(bitmap, origin);
+                        }
                     }
                 }
 
@@ -260,82 +329,153 @@ namespace Emby.Drawing.Skia
             return GetBitmap(path, cropWhitespace, false, out origin);
         }
 
-        private SKBitmap RotateAndFlip(SKBitmap original, SKCodecOrigin origin)
+        private SKBitmap OrientImage(SKBitmap bitmap, SKCodecOrigin origin)
         {
-            // these are the origins that represent a 90 degree turn in some fashion
-            var differentOrientations = new SKCodecOrigin[]
-            {
-                SKCodecOrigin.LeftBottom,
-                SKCodecOrigin.LeftTop,
-                SKCodecOrigin.RightBottom,
-                SKCodecOrigin.RightTop
-            };
+            //var transformations = {
+            //    2: { rotate: 0, flip: true},
+            //    3: { rotate: 180, flip: false},
+            //    4: { rotate: 180, flip: true},
+            //    5: { rotate: 90, flip: true},
+            //    6: { rotate: 90, flip: false},
+            //    7: { rotate: 270, flip: true},
+            //    8: { rotate: 270, flip: false},
+            //}
 
-            // check if we need to turn the image
-            bool isDifferentOrientation = differentOrientations.Any(o => o == origin);
-
-            // define new width/height
-            var width = isDifferentOrientation ? original.Height : original.Width;
-            var height = isDifferentOrientation ? original.Width : original.Height;
-
-            var bitmap = new SKBitmap(width, height, true);
-
-            // todo: the stuff in this switch statement should be rewritten to use pointers
             switch (origin)
             {
-                case SKCodecOrigin.LeftBottom:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(y, original.Width - 1 - x, original.GetPixel(x, y));
-                    break;
-
-                case SKCodecOrigin.RightTop:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(original.Height - 1 - y, x, original.GetPixel(x, y));
-                    break;
-
-                case SKCodecOrigin.RightBottom:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(original.Height - 1 - y, original.Width - 1 - x, original.GetPixel(x, y));
-
-                    break;
-
-                case SKCodecOrigin.LeftTop:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(y, x, original.GetPixel(x, y));
-                    break;
-
-                case SKCodecOrigin.BottomLeft:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(x, original.Height - 1 - y, original.GetPixel(x, y));
-                    break;
-
-                case SKCodecOrigin.BottomRight:
-
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(original.Width - 1 - x, original.Height - 1 - y, original.GetPixel(x, y));
-                    break;
 
                 case SKCodecOrigin.TopRight:
+                    {
+                        var rotated = new SKBitmap(bitmap.Width, bitmap.Height);
+                        using (var surface = new SKCanvas(rotated))
+                        {
+                            surface.Translate(rotated.Width, 0);
+                            surface.Scale(-1, 1);
+                            surface.DrawBitmap(bitmap, 0, 0);
+                        }
 
-                    for (var x = 0; x < original.Width; x++)
-                        for (var y = 0; y < original.Height; y++)
-                            bitmap.SetPixel(original.Width - 1 - x, y, original.GetPixel(x, y));
-                    break;
+                        return rotated;
+                    }
 
+                case SKCodecOrigin.BottomRight:
+                    {
+                        var rotated = new SKBitmap(bitmap.Width, bitmap.Height);
+                        using (var surface = new SKCanvas(rotated))
+                        {
+                            float px = bitmap.Width;
+                            px /= 2;
+
+                            float py = bitmap.Height;
+                            py /= 2;
+
+                            surface.RotateDegrees(180, px, py);
+                            surface.DrawBitmap(bitmap, 0, 0);
+                        }
+
+                        return rotated;
+                    }
+
+                case SKCodecOrigin.BottomLeft:
+                    {
+                        var rotated = new SKBitmap(bitmap.Width, bitmap.Height);
+                        using (var surface = new SKCanvas(rotated))
+                        {
+                            float px = bitmap.Width;
+                            px /= 2;
+
+                            float py = bitmap.Height;
+                            py /= 2;
+
+                            surface.Translate(rotated.Width, 0);
+                            surface.Scale(-1, 1);
+
+                            surface.RotateDegrees(180, px, py);
+                            surface.DrawBitmap(bitmap, 0, 0);
+                        }
+
+                        return rotated;
+                    }
+
+                case SKCodecOrigin.LeftTop:
+                    {
+                        // TODO: Remove dual canvases, had trouble with flipping
+                        using (var rotated = new SKBitmap(bitmap.Height, bitmap.Width))
+                        {
+                            using (var surface = new SKCanvas(rotated))
+                            {
+                                surface.Translate(rotated.Width, 0);
+
+                                surface.RotateDegrees(90);
+
+                                surface.DrawBitmap(bitmap, 0, 0);
+
+                            }
+
+                            var flippedBitmap = new SKBitmap(rotated.Width, rotated.Height);
+                            using (var flippedCanvas = new SKCanvas(flippedBitmap))
+                            {
+                                flippedCanvas.Translate(flippedBitmap.Width, 0);
+                                flippedCanvas.Scale(-1, 1);
+                                flippedCanvas.DrawBitmap(rotated, 0, 0);
+                            }
+
+                            return flippedBitmap;
+                        }
+                    }
+
+                case SKCodecOrigin.RightTop:
+                    {
+                        var rotated = new SKBitmap(bitmap.Height, bitmap.Width);
+                        using (var surface = new SKCanvas(rotated))
+                        {
+                            surface.Translate(rotated.Width, 0);
+                            surface.RotateDegrees(90);
+                            surface.DrawBitmap(bitmap, 0, 0);
+                        }
+
+                        return rotated;
+                    }
+
+                case SKCodecOrigin.RightBottom:
+                    {
+                        // TODO: Remove dual canvases, had trouble with flipping
+                        using (var rotated = new SKBitmap(bitmap.Height, bitmap.Width))
+                        {
+                            using (var surface = new SKCanvas(rotated))
+                            {
+                                surface.Translate(0, rotated.Height);
+                                surface.RotateDegrees(270);
+                                surface.DrawBitmap(bitmap, 0, 0);
+                            }
+
+                            var flippedBitmap = new SKBitmap(rotated.Width, rotated.Height);
+                            using (var flippedCanvas = new SKCanvas(flippedBitmap))
+                            {
+                                flippedCanvas.Translate(flippedBitmap.Width, 0);
+                                flippedCanvas.Scale(-1, 1);
+                                flippedCanvas.DrawBitmap(rotated, 0, 0);
+                            }
+
+                            return flippedBitmap;
+                        }
+                    }
+
+                case SKCodecOrigin.LeftBottom:
+                    {
+                        var rotated = new SKBitmap(bitmap.Height, bitmap.Width);
+                        using (var surface = new SKCanvas(rotated))
+                        {
+                            surface.Translate(0, rotated.Height);
+                            surface.RotateDegrees(270);
+                            surface.DrawBitmap(bitmap, 0, 0);
+                        }
+
+                        return rotated;
+                    }
+
+                default:
+                    return bitmap;
             }
-
-            return bitmap;
         }
 
         public string EncodeImage(string inputPath, DateTime dateModified, string outputPath, bool autoOrient, ImageOrientation? orientation, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
@@ -356,17 +496,16 @@ namespace Emby.Drawing.Skia
             var blur = options.Blur ?? 0;
             var hasIndicator = options.AddPlayedIndicator || options.UnplayedCount.HasValue || !options.PercentPlayed.Equals(0);
 
-            using (var bitmap = GetBitmap(inputPath, options.CropWhiteSpace, autoOrient, orientation))
+            using (var bitmap = GetBitmap(inputPath, options.CropWhiteSpace, autoOrient))
             {
                 if (bitmap == null)
                 {
-                    throw new Exception(string.Format("Skia unable to read image {0}", inputPath));
+                    throw new ArgumentOutOfRangeException(string.Format("Skia unable to read image {0}", inputPath));
                 }
 
                 //_logger.Info("Color type {0}", bitmap.Info.ColorType);
 
                 var originalImageSize = new ImageSize(bitmap.Width, bitmap.Height);
-                ImageHelper.SaveImageSize(inputPath, dateModified, originalImageSize);
 
                 if (!options.CropWhiteSpace && options.HasDefaultOptions(inputPath, originalImageSize) && !autoOrient)
                 {
@@ -502,10 +641,6 @@ namespace Emby.Drawing.Skia
         public string Name
         {
             get { return "Skia"; }
-        }
-
-        public void Dispose()
-        {
         }
 
         public bool SupportsImageCollageCreation

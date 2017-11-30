@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Emby.Dlna.Server;
 using MediaBrowser.Model.Threading;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Dlna.PlayTo
 {
@@ -112,7 +113,7 @@ namespace Emby.Dlna.PlayTo
 
         private int GetInactiveTimerIntervalMs()
         {
-            return 30000;
+            return 60000;
         }
 
         public void Start()
@@ -160,18 +161,15 @@ namespace Emby.Dlna.PlayTo
             if (_disposed)
                 return;
 
-            if (!_timerActive)
+            lock (_timerLock)
             {
-                lock (_timerLock)
+                if (!_timerActive)
                 {
-                    if (!_timerActive)
-                    {
-                        _logger.Debug("RestartTimer");
-                        _timer.Change(10, GetPlaybackTimerIntervalMs());
-                    }
-
-                    _timerActive = true;
+                    _logger.Debug("RestartTimer");
+                    _timer.Change(10, GetPlaybackTimerIntervalMs());
                 }
+
+                _timerActive = true;
             }
         }
 
@@ -183,23 +181,20 @@ namespace Emby.Dlna.PlayTo
             if (_disposed)
                 return;
 
-            if (_timerActive)
+            lock (_timerLock)
             {
-                lock (_timerLock)
+                if (_timerActive)
                 {
-                    if (_timerActive)
+                    _logger.Debug("RestartTimerInactive");
+                    var interval = GetInactiveTimerIntervalMs();
+
+                    if (_timer != null)
                     {
-                        _logger.Debug("RestartTimerInactive");
-                        var interval = GetInactiveTimerIntervalMs();
-
-                        if (_timer != null)
-                        {
-                            _timer.Change(interval, interval);
-                        }
+                        _timer.Change(interval, interval);
                     }
-
-                    _timerActive = false;
                 }
+
+                _timerActive = false;
             }
         }
 
@@ -492,6 +487,10 @@ namespace Emby.Dlna.PlayTo
                         RestartTimer();
                     }
                 }
+                else
+                {
+                    RestartTimerInactive();
+                }
             }
             catch (HttpException ex)
             {
@@ -663,7 +662,33 @@ namespace Emby.Dlna.PlayTo
 
             var e = track.Element(uPnpNamespaces.items) ?? track;
 
-            return UpnpContainer.Create(e);
+            var elementString = (string)e;
+
+            if (!string.IsNullOrWhiteSpace(elementString))
+            {
+                return UpnpContainer.Create(e);
+            }
+
+            track = result.Document.Descendants("CurrentURI").FirstOrDefault();
+
+            if (track == null)
+            {
+                return null;
+            }
+
+            e = track.Element(uPnpNamespaces.items) ?? track;
+
+            elementString = (string)e;
+
+            if (!string.IsNullOrWhiteSpace(elementString))
+            {
+                return new uBaseObject
+                {
+                    Url = elementString
+                };
+            }
+
+            return null;
         }
 
         private async Task<Tuple<bool, uBaseObject>> GetPositionInfo()
@@ -721,7 +746,7 @@ namespace Emby.Dlna.PlayTo
 
             if (string.IsNullOrWhiteSpace(trackString) || string.Equals(trackString, "NOT_IMPLEMENTED", StringComparison.OrdinalIgnoreCase))
             {
-                return new Tuple<bool, uBaseObject>(false, null);
+                return new Tuple<bool, uBaseObject>(true, null);
             }
 
             XElement uPnpResponse;
@@ -890,7 +915,7 @@ namespace Emby.Dlna.PlayTo
             if (room != null && !string.IsNullOrWhiteSpace(room.Value))
                 friendlyNames.Add(room.Value);
 
-            deviceProperties.Name = string.Join(" ", friendlyNames.ToArray());
+            deviceProperties.Name = string.Join(" ", friendlyNames.ToArray(friendlyNames.Count));
 
             var model = document.Descendants(uPnpNamespaces.ud.GetName("modelName")).FirstOrDefault();
             if (model != null)
@@ -1106,6 +1131,7 @@ namespace Emby.Dlna.PlayTo
                 _disposed = true;
 
                 DisposeTimer();
+                GC.SuppressFinalize(this);
             }
         }
 

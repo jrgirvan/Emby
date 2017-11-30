@@ -19,7 +19,7 @@ namespace MediaBrowser.Api
 {
     [Route("/Videos/{Id}/AdditionalParts", "GET", Summary = "Gets additional parts for a video.")]
     [Authenticated]
-    public class GetAdditionalParts : IReturn<ItemsResult>
+    public class GetAdditionalParts : IReturn<QueryResult<BaseItemDto>>
     {
         [ApiMember(Name = "UserId", Description = "Optional. Filter by user id, and attach user data", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string UserId { get; set; }
@@ -99,7 +99,7 @@ namespace MediaBrowser.Api
                 items = new BaseItemDto[] { };
             }
 
-            var result = new ItemsResult
+            var result = new QueryResult<BaseItemDto>
             {
                 Items = items,
                 TotalRecordCount = items.Length
@@ -110,37 +110,24 @@ namespace MediaBrowser.Api
 
         public void Delete(DeleteAlternateSources request)
         {
-            var task = DeleteAsync(request);
-
-            Task.WaitAll(task);
-        }
-
-        public async Task DeleteAsync(DeleteAlternateSources request)
-        {
             var video = (Video)_libraryManager.GetItemById(request.Id);
 
             foreach (var link in video.GetLinkedAlternateVersions())
             {
-                link.PrimaryVersionId = null;
+                link.SetPrimaryVersionId(null);
+                link.LinkedAlternateVersions = Video.EmptyLinkedChildArray;
 
-                await link.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                link.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
             }
 
-            video.LinkedAlternateVersions.Clear();
-            await video.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            video.LinkedAlternateVersions = Video.EmptyLinkedChildArray;
+            video.SetPrimaryVersionId(null);
+            video.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
         }
 
         public void Post(MergeVersions request)
         {
-            var task = PostAsync(request);
-
-            Task.WaitAll(task);
-        }
-
-        public async Task PostAsync(MergeVersions request)
-        {
             var items = request.Ids.Split(',')
-                .Select(i => new Guid(i))
                 .Select(i => _libraryManager.GetItemById(i))
                 .OfType<Video>()
                 .ToList();
@@ -163,19 +150,19 @@ namespace MediaBrowser.Api
             if (primaryVersion == null)
             {
                 primaryVersion = items.OrderBy(i =>
-                {
-                    if (i.Video3DFormat.HasValue)
                     {
-                        return 1;
-                    }
+                        if (i.Video3DFormat.HasValue)
+                        {
+                            return 1;
+                        }
 
-                    if (i.VideoType != Model.Entities.VideoType.VideoFile)
-                    {
-                        return 1;
-                    }
+                        if (i.VideoType != Model.Entities.VideoType.VideoFile)
+                        {
+                            return 1;
+                        }
 
-                    return 0;
-                })
+                        return 0;
+                    })
                     .ThenByDescending(i =>
                     {
                         var stream = i.GetDefaultVideoStream();
@@ -185,20 +172,24 @@ namespace MediaBrowser.Api
                     }).First();
             }
 
+            var list = primaryVersion.LinkedAlternateVersions.ToList();
+
             foreach (var item in items.Where(i => i.Id != primaryVersion.Id))
             {
-                item.PrimaryVersionId = primaryVersion.Id.ToString("N");
+                item.SetPrimaryVersionId(primaryVersion.Id.ToString("N"));
 
-                await item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
 
-                primaryVersion.LinkedAlternateVersions.Add(new LinkedChild
+                list.Add(new LinkedChild
                 {
                     Path = item.Path,
                     ItemId = item.Id
                 });
             }
 
-            await primaryVersion.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            primaryVersion.LinkedAlternateVersions = list.ToArray();
+
+            primaryVersion.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
         }
     }
 }

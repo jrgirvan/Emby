@@ -49,10 +49,9 @@ namespace Emby.Server.Implementations.Library
             _providers = providers.ToArray();
         }
 
-        public IEnumerable<MediaStream> GetMediaStreams(MediaStreamQuery query)
+        public List<MediaStream> GetMediaStreams(MediaStreamQuery query)
         {
-            var list = _itemRepo.GetMediaStreams(query)
-                .ToList();
+            var list = _itemRepo.GetMediaStreams(query);
 
             foreach (var stream in list)
             {
@@ -77,7 +76,7 @@ namespace Emby.Server.Implementations.Library
             return false;
         }
 
-        public IEnumerable<MediaStream> GetMediaStreams(string mediaSourceId)
+        public List<MediaStream> GetMediaStreams(string mediaSourceId)
         {
             var list = GetMediaStreams(new MediaStreamQuery
             {
@@ -87,7 +86,7 @@ namespace Emby.Server.Implementations.Library
             return GetMediaStreamsForItem(list);
         }
 
-        public IEnumerable<MediaStream> GetMediaStreams(Guid itemId)
+        public List<MediaStream> GetMediaStreams(Guid itemId)
         {
             var list = GetMediaStreams(new MediaStreamQuery
             {
@@ -97,23 +96,17 @@ namespace Emby.Server.Implementations.Library
             return GetMediaStreamsForItem(list);
         }
 
-        private IEnumerable<MediaStream> GetMediaStreamsForItem(IEnumerable<MediaStream> streams)
+        private List<MediaStream> GetMediaStreamsForItem(List<MediaStream> streams)
         {
-            var list = streams.ToList();
-
-            var subtitleStreams = list
-                .Where(i => i.Type == MediaStreamType.Subtitle)
-                .ToList();
-
-            if (subtitleStreams.Count > 0)
+            foreach (var stream in streams)
             {
-                foreach (var subStream in subtitleStreams)
+                if (stream.Type == MediaStreamType.Subtitle)
                 {
-                    subStream.SupportsExternalStream = StreamSupportsExternalStream(subStream);
+                    stream.SupportsExternalStream = StreamSupportsExternalStream(stream);
                 }
             }
 
-            return list;
+            return streams;
         }
 
         public async Task<IEnumerable<MediaSourceInfo>> GetPlayackMediaSources(string id, string userId, bool enablePathSubstitution, string[] supportedLiveMediaTypes, CancellationToken cancellationToken)
@@ -253,7 +246,7 @@ namespace Emby.Server.Implementations.Library
             return sources.FirstOrDefault(i => string.Equals(i.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase));
         }
 
-        public IEnumerable<MediaSourceInfo> GetStaticMediaSources(IHasMediaSources item, bool enablePathSubstitution, User user = null)
+        public List<MediaSourceInfo> GetStaticMediaSources(IHasMediaSources item, bool enablePathSubstitution, User user = null)
         {
             if (item == null)
             {
@@ -265,7 +258,7 @@ namespace Emby.Server.Implementations.Library
                 return item.GetMediaSources(enablePathSubstitution);
             }
 
-            var sources = item.GetMediaSources(enablePathSubstitution).ToList();
+            var sources = item.GetMediaSources(enablePathSubstitution);
 
             if (user != null)
             {
@@ -525,6 +518,7 @@ namespace Emby.Server.Implementations.Library
         public void Dispose()
         {
             Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         private readonly object _disposeLock = new object();

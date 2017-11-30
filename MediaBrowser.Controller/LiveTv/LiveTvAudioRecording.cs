@@ -6,7 +6,6 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Model.Serialization;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
@@ -92,20 +91,7 @@ namespace MediaBrowser.Controller.LiveTv
 
         public override double? GetDefaultPrimaryImageAspectRatio()
         {
-            if (IsMovie)
-            {
-                double value = 2;
-                value /= 3;
-
-                return value;
-            }
-            else
-            {
-                double value = 2;
-                value /= 3;
-
-                return value;
-            }
+            return LiveTvProgram.GetDefaultPrimaryImageAspectRatio(this);
         }
 
         public override string GetClientTypeName()
@@ -146,14 +132,14 @@ namespace MediaBrowser.Controller.LiveTv
             return true;
         }
 
-        public override bool IsAuthorizedToDelete(User user)
+        public override bool IsAuthorizedToDelete(User user, List<Folder> allCollectionFolders)
         {
             return user.Policy.EnableLiveTvManagement;
         }
 
-        public override IEnumerable<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
+        public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
         {
-            var list = base.GetMediaSources(enablePathSubstitution).ToList();
+            var list = base.GetMediaSources(enablePathSubstitution);
 
             foreach (var mediaSource in list)
             {
@@ -174,11 +160,6 @@ namespace MediaBrowser.Controller.LiveTv
         public override Task Delete(DeleteOptions options)
         {
             return LiveTvManager.DeleteRecording(this);
-        }
-
-        public override Task OnFileDeleted()
-        {
-            return LiveTvManager.OnRecordingFileDeleted(this);
         }
     }
 }

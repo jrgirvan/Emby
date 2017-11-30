@@ -15,9 +15,9 @@ namespace MediaBrowser.Providers.Music
 {
     public class ArtistMetadataService : MetadataService<MusicArtist, ArtistInfo>
     {
-        protected override ItemUpdateType BeforeSave(MusicArtist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        protected override ItemUpdateType BeforeSaveInternal(MusicArtist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
         {
-            var updateType = base.BeforeSave(item, isFullRefresh, currentUpdateType);
+            var updateType = base.BeforeSaveInternal(item, isFullRefresh, currentUpdateType);
 
             if (isFullRefresh || currentUpdateType > ItemUpdateType.None)
             {
@@ -29,9 +29,9 @@ namespace MediaBrowser.Providers.Music
                             Recursive = true,
                             IsFolder = false
                         }) :
-                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder).ToList();
+                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder);
 
-                    var currentList = item.Genres.ToList();
+                    var currentList = item.Genres;
 
                     item.Genres = taggedItems.SelectMany(i => i.Genres)
                         .DistinctNames()
@@ -47,7 +47,7 @@ namespace MediaBrowser.Providers.Music
             return updateType;
         }
 
-        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
         }

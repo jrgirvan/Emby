@@ -8,7 +8,6 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.XbmcMetadata.Configuration;
 using MediaBrowser.XbmcMetadata.Savers;
 using System;
-using System.Linq;
 using MediaBrowser.Controller.Dto;
 
 namespace MediaBrowser.XbmcMetadata
@@ -53,10 +52,10 @@ namespace MediaBrowser.XbmcMetadata
 
                     var items = _libraryManager.GetItemList(new InternalItemsQuery
                     {
-                        PersonIds = new [] { person.Id.ToString("N") },
+                        PersonIds = new[] { person.Id.ToString("N") },
                         DtoOptions = new DtoOptions(true)
 
-                    }).ToList();
+                    });
 
                     foreach (var item in items)
                     {
@@ -82,9 +81,10 @@ namespace MediaBrowser.XbmcMetadata
         public void Dispose()
         {
             _userDataManager.UserDataSaved -= _userDataManager_UserDataSaved;
+            GC.SuppressFinalize(this);
         }
 
-        private async void SaveMetadataForItem(BaseItem item, ItemUpdateType updateReason)
+        private void SaveMetadataForItem(BaseItem item, ItemUpdateType updateReason)
         {
             var locationType = item.LocationType;
             if (locationType == LocationType.Remote ||
@@ -105,7 +105,7 @@ namespace MediaBrowser.XbmcMetadata
 
             try
             {
-                await _providerManager.SaveMetadata(item, updateReason, new[] { BaseNfoSaver.SaverName }).ConfigureAwait(false);
+                _providerManager.SaveMetadata(item, updateReason, new[] { BaseNfoSaver.SaverName });
             }
             catch (Exception ex)
             {

@@ -58,12 +58,12 @@ namespace MediaBrowser.Providers.Music
             get { return "FanArt"; }
         }
 
-        public bool Supports(IHasImages item)
+        public bool Supports(IHasMetadata item)
         {
             return item is MusicArtist;
         }
 
-        public IEnumerable<ImageType> GetSupportedImages(IHasImages item)
+        public IEnumerable<ImageType> GetSupportedImages(IHasMetadata item)
         {
             return new List<ImageType>
             {
@@ -75,7 +75,7 @@ namespace MediaBrowser.Providers.Music
             };
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasImages item, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken)
         {
             var artist = (MusicArtist)item;
 
@@ -251,17 +251,20 @@ namespace MediaBrowser.Providers.Music
 
             try
             {
-                using (var response = await _httpClient.Get(new HttpRequestOptions
+                using (var httpResponse = await _httpClient.SendAsync(new HttpRequestOptions
                 {
                     Url = url,
                     CancellationToken = cancellationToken,
                     BufferContent = true
 
-                }).ConfigureAwait(false))
+                }, "GET").ConfigureAwait(false))
                 {
-                    using (var saveFileStream = _fileSystem.GetFileStream(jsonPath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
+                    using (var response = httpResponse.Content)
                     {
-                        await response.CopyToAsync(saveFileStream).ConfigureAwait(false);
+                        using (var saveFileStream = _fileSystem.GetFileStream(jsonPath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
+                        {
+                            await response.CopyToAsync(saveFileStream).ConfigureAwait(false);
+                        }
                     }
                 }
             }
